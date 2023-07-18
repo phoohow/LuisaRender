@@ -6,7 +6,7 @@ add_library(luisa-render-util SHARED
         spec.cpp spec.h
         colorspace.h
         half.cpp half.h
-        u64.h
+        u64.cpp u64.h
         rng.cpp rng.h
         ies.cpp ies.h
         scattering.cpp scattering.h
@@ -18,7 +18,10 @@ add_library(luisa-render-util SHARED
         progress_bar.cpp progress_bar.h
         loop_subdiv.cpp loop_subdiv.h
         vertex.h
-        counter_buffer.cpp counter_buffer.h)
+        counter_buffer.cpp counter_buffer.h
+        polymorphic_closure.h
+        command_buffer.cpp command_buffer.h
+        thread_pool.cpp thread_pool.h)
 target_link_libraries(luisa-render-util PUBLIC
         luisa::compute
         luisa-render-include

@@ -5,6 +5,7 @@
 #pragma once
 
 #include <dsl/syntax.h>
+#include <util/spec.h>
 
 namespace luisa::render {
 
@@ -41,7 +42,7 @@ template<typename Table>
     auto u = u_in * cast<float>(n);
     auto i = clamp(cast<uint>(u), 0u, n - 1u);
     auto u_remapped = fract(u);
-    auto entry = table.read(i + offset);
+    auto entry = table->read(i + offset);
     auto index = ite(u_remapped < entry.prob, i, entry.alias);
     auto uu = ite(u_remapped < entry.prob, u_remapped / entry.prob,
                   (u_remapped - entry.prob) / (1.0f - entry.prob));
@@ -56,8 +57,8 @@ template<typename ProbTable, typename AliasTable>
     auto u = u_in * cast<float>(n);
     auto i = clamp(cast<uint>(u), 0u, n - 1u);
     auto u_remapped = fract(u);
-    auto prob = probs.read(i + offset);
-    auto index = ite(u_remapped < prob, i, indices.read(i + offset));
+    auto prob = probs->read(i + offset);
+    auto index = ite(u_remapped < prob, i, indices->read(i + offset));
     auto uu = ite(
         u_remapped < prob, u_remapped / prob,
         (u_remapped - prob) / (1.0f - prob));
@@ -68,6 +69,11 @@ template<typename ProbTable, typename AliasTable>
 [[nodiscard]] Float power_heuristic(Expr<uint> nf, Expr<float> fPdf, Expr<uint> ng, Expr<float> gPdf) noexcept;
 [[nodiscard]] Float balance_heuristic(Expr<float> fPdf, Expr<float> gPdf) noexcept;
 [[nodiscard]] Float power_heuristic(Expr<float> fPdf, Expr<float> gPdf) noexcept;
+
+[[nodiscard]] UInt sample_discrete(Expr<float2> weights, Expr<float> u) noexcept;
+[[nodiscard]] UInt sample_discrete(Expr<float3> weights, Expr<float> u) noexcept;
+[[nodiscard]] UInt sample_discrete(const SampledSpectrum &weights, Expr<float> u) noexcept;
+[[nodiscard]] Float sample_exponential(Expr<float> u, Expr<float> a) noexcept;
 
 }// namespace luisa::render
 

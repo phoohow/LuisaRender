@@ -122,11 +122,11 @@ public:
         _w |= _w >> 16u;
         _pixel_tile_size = 1u << (log4(nPMJ02bnSamples) - log4(next_pow4(spp)));
         auto pixel_sample_count = _pixel_tile_size * _pixel_tile_size * spp;
-        if (_pixel_samples.size() < pixel_sample_count) {
+        if (!_pixel_samples || _pixel_samples.size() < pixel_sample_count) {
             _pixel_samples = pipeline().device().create_buffer<float2>(
                 next_pow2(pixel_sample_count));
         }
-        if (_state_buffer.size() < state_count) {
+        if (!_state_buffer || _state_buffer.size() < state_count) {
             _state_buffer = pipeline().device().create_buffer<uint4>(
                 next_pow2(state_count));
         }
@@ -167,11 +167,11 @@ public:
         _sample_index.emplace(sample_index);
     }
     void save_state(Expr<uint> state_id) noexcept override {
-        _state_buffer.write(
+        _state_buffer->write(
             state_id, make_uint4(*_pixel, *_sample_index, *_dimension));
     }
     void load_state(Expr<uint> state_id) noexcept override {
-        auto state = _state_buffer.read(state_id);
+        auto state = _state_buffer->read(state_id);
         _pixel.emplace(state.xy());
         _sample_index.emplace(state.z);
         _dimension.emplace(state.w);
@@ -212,7 +212,7 @@ public:
     [[nodiscard]] Float2 generate_pixel_2d() noexcept override {
         auto p = *_pixel % _pixel_tile_size;
         auto offset = (p.x + p.y * _pixel_tile_size) * _spp;
-        return _pixel_samples.read(offset + *_sample_index);
+        return _pixel_samples->read(offset + *_sample_index);
     }
 };
 

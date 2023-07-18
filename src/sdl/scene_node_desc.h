@@ -7,7 +7,6 @@
 #include <string>
 #include <filesystem>
 
-#include <core/hash.h>
 #include <core/stl.h>
 #include <core/logging.h>
 #include <core/basic_types.h>
@@ -196,6 +195,8 @@ public:
     LUISA_SCENE_NODE_DESC_SHARED_DEFAULT(texture, TEXTURE)
     LUISA_SCENE_NODE_DESC_SHARED_DEFAULT(texture_mapping, TEXTURE_MAPPING)
     LUISA_SCENE_NODE_DESC_SHARED_DEFAULT(spectrum, SPECTRUM)
+    LUISA_SCENE_NODE_DESC_SHARED_DEFAULT(medium, MEDIUM)
+    LUISA_SCENE_NODE_DESC_SHARED_DEFAULT(phase_function, PHASE_FUNCTION)
 #undef LUISA_SCENE_NODE_DESC_SHARED_DEFAULT
 
 public:

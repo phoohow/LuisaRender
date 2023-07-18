@@ -27,10 +27,6 @@ Bool refract(Float3 wi, Float3 n, Float eta, Float3 *wt) noexcept {
     return v.w < 1.0f;
 }
 
-Float3 reflect(Float3 wo, Float3 n) noexcept {
-    return 2.f * dot(wo, n) * n - wo;
-}
-
 Float fresnel_dielectric(Float cosThetaI_in, Float etaI_in, Float etaT_in) noexcept {
     static Callable impl = [](Float cosThetaI_in, Float etaI_in, Float etaT_in) noexcept {
         using namespace compute;
@@ -131,19 +127,19 @@ TrowbridgeReitzDistribution::TrowbridgeReitzDistribution(Expr<float2> alpha) noe
     : MicrofacetDistribution{alpha} {}
 
 Float TrowbridgeReitzDistribution::roughness_to_alpha(Expr<float> roughness) noexcept {
-    return sqr(roughness);
+    return max(sqr(roughness), 1e-4f);
 }
 
 Float2 TrowbridgeReitzDistribution::roughness_to_alpha(Expr<float2> roughness) noexcept {
-    return sqr(roughness);
+    return max(sqr(roughness), 1e-4f);
 }
 
 Float TrowbridgeReitzDistribution::alpha_to_roughness(Expr<float> alpha) noexcept {
-    return sqrt(alpha);
+    return sqrt(max(alpha, 1e-4f));
 }
 
 Float2 TrowbridgeReitzDistribution::alpha_to_roughness(Expr<float2> alpha) noexcept {
-    return sqrt(alpha);
+    return sqrt(max(alpha, 1e-4f));
 }
 
 Float TrowbridgeReitzDistribution::D(Expr<float3> wh) const noexcept {
@@ -309,7 +305,7 @@ SampledSpectrum MicrofacetReflection::evaluate(
 
 BxDF::SampledDirection MicrofacetReflection::sample_wi(Expr<float3> wo, Expr<float2> u, TransportMode mode) const noexcept {
     auto wh = _distribution->sample_wh(wo, u);
-    auto wi = reflect(wo, wh);
+    auto wi = reflect(-wo, wh);
     return {.wi = wi, .valid = same_hemisphere(wo, wi)};
 }
 
@@ -438,7 +434,7 @@ BxDF::SampledDirection FresnelBlend::sample_wi(Expr<float3> wo, Expr<float2> uOr
         u.x = (u.x - _rd_ratio) / (1.f - _rd_ratio);
         // Sample microfacet orientation $\wh$ and reflected direction $\wi$
         auto wh = _distribution->sample_wh(wo, u);
-        wi = reflect(wo, wh);
+        wi = reflect(-wo, wh);
     };
     return {.wi = wi, .valid = same_hemisphere(wo, wi)};
 }

@@ -104,7 +104,7 @@ public:
                 "Non power-of-two samples per pixel "
                 "is not optimal for Sobol' sampler.");
         }
-        if (_state_buffer.size() < state_count) {
+        if (!_state_buffer || _state_buffer.size() < state_count) {
             _state_buffer = pipeline().device().create_buffer<uint4>(
                 next_pow2(state_count));
         }
@@ -117,10 +117,10 @@ public:
     }
     void save_state(Expr<uint> state_id) noexcept override {
         auto state = make_uint4(*_pixel, *_sample_index, *_dimension);
-        _state_buffer.write(state_id, state);
+        _state_buffer->write(state_id, state);
     }
     void load_state(Expr<uint> state_id) noexcept override {
-        auto state = _state_buffer.read(state_id);
+        auto state = _state_buffer->read(state_id);
         _pixel.emplace(state.xy());
         _sample_index.emplace(state.z);
         _dimension.emplace(state.w);

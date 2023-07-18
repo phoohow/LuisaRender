@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include <runtime/command_buffer.h>
+#include <util/command_buffer.h>
 #include <base/scene_node.h>
 #include <base/sampler.h>
 #include <base/spectrum.h>
@@ -15,7 +15,6 @@ namespace luisa::render {
 
 class Pipeline;
 class Display;
-using compute::CommandBuffer;
 
 class Integrator : public SceneNode {
 
@@ -62,9 +61,6 @@ class ProgressiveIntegrator : public Integrator {
 public:
     class Instance : public Integrator::Instance {
 
-    private:
-        luisa::unique_ptr<Display> _display;
-
     protected:
         [[nodiscard]] virtual Float3 Li(const Camera::Instance *camera, Expr<uint> frame_index,
                                         Expr<uint2> pixel_id, Expr<float> time) const noexcept;
@@ -76,17 +72,10 @@ public:
                  const ProgressiveIntegrator *node) noexcept;
         ~Instance() noexcept override;
         void render(Stream &stream) noexcept override;
-        [[nodiscard]] auto display() noexcept { return _display.get(); }
     };
-
-private:
-    uint16_t _display_interval;
-    bool _display;
 
 public:
     ProgressiveIntegrator(Scene *scene, const SceneNodeDesc *desc) noexcept;
-    [[nodiscard]] auto display_enabled() const noexcept { return _display; }
-    [[nodiscard]] auto display_interval() const noexcept { return static_cast<uint>(_display_interval); }
 };
 
 }// namespace luisa::render

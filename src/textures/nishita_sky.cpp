@@ -4,6 +4,7 @@
 
 #include <base/texture.h>
 #include <base/pipeline.h>
+#include <util/thread_pool.h>
 #include <textures/sky_precompute.h>
 
 namespace luisa::render {
@@ -46,7 +47,7 @@ public:
                             .dust_density = _dust_density,
                             .ozone_density = _ozone_density};
         _image = LoadedImage::create(resolution, PixelStorage::FLOAT4);
-        ThreadPool::global().parallel(
+        global_thread_pool().parallel(
             resolution.y / height_per_thread, [data, this](uint32_t y) noexcept {
                 SKY_nishita_skymodel_precompute_texture(
                     data, static_cast<float4 *>(_image.pixels()),
@@ -77,7 +78,7 @@ public:
     [[nodiscard]] bool is_black() const noexcept override { return _scale == 0.f; }
     [[nodiscard]] uint channels() const noexcept override { return 3u; }
     [[nodiscard]] bool is_constant() const noexcept override { return false; }
-    [[nodiscard]] string_view impl_type() const noexcept override { return LUISA_RENDER_PLUGIN_NAME; }
+    [[nodiscard]] luisa::string_view impl_type() const noexcept override { return LUISA_RENDER_PLUGIN_NAME; }
     [[nodiscard]] luisa::unique_ptr<Instance> build(
         Pipeline &pipeline, CommandBuffer &command_buffer) const noexcept override;
 };

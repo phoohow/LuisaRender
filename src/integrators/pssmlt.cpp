@@ -9,7 +9,6 @@
 #include <util/counter_buffer.h>
 #include <base/pipeline.h>
 #include <base/integrator.h>
-#include <base/display.h>
 
 namespace luisa::render {
 
@@ -97,12 +96,12 @@ private:
 
     [[nodiscard]] auto _read_primary_sample(Expr<uint> dim) const noexcept {
         auto i = _primary_sample_index(dim);
-        return _primary_sample_buffer.read(i);
+        return _primary_sample_buffer->read(i);
     }
 
     void _write_primary_sample(Expr<uint> dim, Expr<PrimarySample> sample) noexcept {
         auto i = _primary_sample_index(dim);
-        _primary_sample_buffer.write(i, sample);
+        _primary_sample_buffer->write(i, sample);
     }
 
     [[nodiscard]] static auto _erf_inv(Expr<float> x) noexcept {
@@ -193,10 +192,10 @@ public:
     }
 
     void load(Expr<uint> chain_index) noexcept {
-        auto rng_state = _rng_buffer.read(chain_index);
-        auto current_iteration = _current_iteration_buffer.read(chain_index);
-        auto large_step_and_dimensions = _large_step_and_initialized_dimensions_buffer.read(chain_index);
-        auto last_large_step_iteration = _last_large_step_iteration_buffer.read(chain_index);
+        auto rng_state = _rng_buffer->read(chain_index);
+        auto current_iteration = _current_iteration_buffer->read(chain_index);
+        auto large_step_and_dimensions = _large_step_and_initialized_dimensions_buffer->read(chain_index);
+        auto last_large_step_iteration = _last_large_step_iteration_buffer->read(chain_index);
         _state = luisa::make_unique<State>(State{
             .rng_state = rng_state,
             .current_iteration = U64{current_iteration},
@@ -208,11 +207,11 @@ public:
     }
 
     void save() noexcept {
-        _rng_buffer.write(_state->chain_index, _state->rng_state);
-        _current_iteration_buffer.write(_state->chain_index, _state->current_iteration.bits());
-        _large_step_and_initialized_dimensions_buffer.write(
+        _rng_buffer->write(_state->chain_index, _state->rng_state);
+        _current_iteration_buffer->write(_state->chain_index, _state->current_iteration.bits());
+        _large_step_and_initialized_dimensions_buffer->write(
             _state->chain_index, ite(_state->large_step, 1u, 0u) | (_state->initialized_dimensions << 1u));
-        _last_large_step_iteration_buffer.write(_state->chain_index, _state->last_large_step_iteration.bits());
+        _last_large_step_iteration_buffer->write(_state->chain_index, _state->last_large_step_iteration.bits());
     }
 
     void accept() noexcept {
@@ -297,7 +296,7 @@ public:
     [[nodiscard]] auto large_step_probability() const noexcept { return _large_step_probability; }
     [[nodiscard]] auto sigma() const noexcept { return _sigma; }
     [[nodiscard]] auto enable_statistics() const noexcept { return _statistics; }
-    [[nodiscard]] string_view impl_type() const noexcept override { return LUISA_RENDER_PLUGIN_NAME; }
+    [[nodiscard]] luisa::string_view impl_type() const noexcept override { return LUISA_RENDER_PLUGIN_NAME; }
     [[nodiscard]] luisa::unique_ptr<Integrator::Instance> build(
         Pipeline &pipeline, CommandBuffer &command_buffer) const noexcept override;
 };
@@ -330,7 +329,7 @@ private:
     }
 
     [[nodiscard]] static auto _s(Expr<float3> L, Expr<bool> is_light) noexcept {
-        auto v = clamp(L, 0.f, ite(is_light, 1.f, 1e3f));
+        auto v = clamp(L, 0.f, ite(is_light, 1.f, 1e4f));
         return v.x + v.y + v.z;
     }
 
@@ -394,11 +393,11 @@ private:
             auto u_lobe = sampler.generate_1d();
             auto u_bsdf = sampler.generate_2d();
             auto eta_scale = def(1.f);
+            PolymorphicCall<Surface::Closure> call;
             pipeline().surfaces().dispatch(surface_tag, [&](auto surface) noexcept {
-
-                // create closure
-                auto closure = surface->closure(it, swl, wo, 1.f, time);
-
+                surface->closure(call, *it, swl, wo, 1.f, time);
+            });
+            call.execute([&](auto closure) noexcept {
                 // apply opacity map
                 auto alpha_skip = def(false);
                 if (auto o = closure->opacity()) {
@@ -466,7 +465,7 @@ private:
             auto seed = xxhash32(make_uint2(bootstrap_id, 0xdeadbeefu));
             _sampler->create(chain_id, bootstrap_id);
             auto [_, L, is_light] = Li(*_sampler, seed, camera, time);
-            bootstrap_weights.write(bootstrap_id, _s(L, is_light));
+            bootstrap_weights->write(bootstrap_id, _s(L, is_light));
         });
         LUISA_INFO("PSSMLT: running bootstrap kernel.");
         luisa::vector<float> bw(bootstrap_count);
@@ -537,10 +536,10 @@ private:
             _sampler->create(chain_id, bootstrap_id);
             auto seed = xxhash32(make_uint2(bootstrap_id, 0xdeadbeefu));
             auto [p, L, is_light] = Li(*_sampler, seed, camera, time);
-            position_buffer.write(chain_id, p);
-            radiance_and_contribution_buffer.write(
+            position_buffer->write(chain_id, p);
+            radiance_and_contribution_buffer->write(
                 chain_id, make_float4(L * shutter_weight, _s(L, is_light)));
-            rng_state_buffer.write(chain_id, seed);
+            rng_state_buffer->write(chain_id, seed);
             _sampler->save();
         });
         LUISA_INFO("PSSMLT: compiled create_chains kernel in {} ms.", clk.toc());
@@ -550,15 +549,15 @@ private:
         auto propose = pipeline().device().compile<1u>([&](Float time, Float shutter_weight, Float b) noexcept {
             auto chain_id = dispatch_id().x;
             auto u_wavelength = def(0.f);
-            auto seed = rng_state_buffer.read(chain_id);
+            auto seed = rng_state_buffer->read(chain_id);
             _sampler->load(chain_id);
             _sampler->start_iteration();
             auto proposed = Li(*_sampler, seed, camera, time);
             auto p_new = std::get<0u>(proposed);
             auto L_new = std::get<1u>(proposed);
             auto y_new = _s(L_new, std::get<2u>(proposed));
-            auto p_old = position_buffer.read(chain_id);
-            auto L_and_y_old = radiance_and_contribution_buffer.read(chain_id);
+            auto p_old = position_buffer->read(chain_id);
+            auto L_and_y_old = radiance_and_contribution_buffer->read(chain_id);
             auto L_old = L_and_y_old.xyz();
             auto y_old = L_and_y_old.w;
 
@@ -566,7 +565,7 @@ private:
                 auto offset = (p.y * resolution.x + p.x) * 3u;
                 $if(!any(isnan(L))) {
                     for (auto i = 0u; i < 3u; i++) {
-                        accumulate_buffer.atomic(offset + i).fetch_add(L[i]);
+                        accumulate_buffer->atomic(offset + i).fetch_add(L[i]);
                     }
                 };
             };
@@ -584,8 +583,8 @@ private:
 
             // Accept or reject the proposal
             $if(lcg(seed) < accept) {
-                position_buffer.write(chain_id, p_new);
-                radiance_and_contribution_buffer.write(
+                position_buffer->write(chain_id, p_new);
+                radiance_and_contribution_buffer->write(
                     chain_id, make_float4(shutter_weight * L_new, y_new));
                 _sampler->accept();
                 accept_counter.record(pixel_index_new);
@@ -594,7 +593,7 @@ private:
             $else {
                 _sampler->reject();
             };
-            rng_state_buffer.write(chain_id, seed);
+            rng_state_buffer->write(chain_id, seed);
             _sampler->save();
         });
         LUISA_INFO("PSSMLT: compiled render kernel in {} ms.", clk.toc());
@@ -603,9 +602,9 @@ private:
         LUISA_INFO("PSSMLT: compiling clear kernel...");
         auto clear = pipeline().device().compile<1u>([&]() noexcept {
             auto pixel_id = dispatch_id().x;
-            accumulate_buffer.write(pixel_id * 3u + 0u, 0.f);
-            accumulate_buffer.write(pixel_id * 3u + 1u, 0.f);
-            accumulate_buffer.write(pixel_id * 3u + 2u, 0.f);
+            accumulate_buffer->write(pixel_id * 3u + 0u, 0.f);
+            accumulate_buffer->write(pixel_id * 3u + 1u, 0.f);
+            accumulate_buffer->write(pixel_id * 3u + 2u, 0.f);
         });
         LUISA_INFO("PSSMLT: compiled clear kernel in {} ms.", clk.toc());
 
@@ -614,9 +613,9 @@ private:
         auto accumulate = pipeline().device().compile<2>([&](Float effective_spp) {
             auto p = dispatch_id().xy();
             auto offset = (p.y * resolution.x + p.x) * 3u;
-            auto L = make_float3(accumulate_buffer.read(offset + 0u),
-                                 accumulate_buffer.read(offset + 1u),
-                                 accumulate_buffer.read(offset + 2u));
+            auto L = make_float3(accumulate_buffer->read(offset + 0u),
+                                 accumulate_buffer->read(offset + 1u),
+                                 accumulate_buffer->read(offset + 2u));
             camera->film()->accumulate(p, L, effective_spp);
         });
         LUISA_INFO("PSSMLT: compiled blit kernel in {} ms.", clk.toc());
@@ -646,12 +645,10 @@ private:
                 command_buffer << propose(s.point.time, s.point.weight, static_cast<float>(b))
                                       .dispatch(chains_to_dispatch);
                 mutation_count += chains_to_dispatch;
-                auto dispatches_per_commit =
-                    display() && !display()->should_close() ?
-                        node<ProgressiveIntegrator>()->display_interval() *
-                            std::max(pixel_count / chains, 1u) :
-                        64u;
-                if (++dispatch_count >= dispatches_per_commit) [[unlikely]] {
+                dispatch_count++;
+                if (camera->film()->show(command_buffer)) { dispatch_count = 0u; }
+                auto dispatches_per_commit = 16u;
+                if (dispatch_count >= dispatches_per_commit) [[unlikely]] {
                     auto p = static_cast<double>(mutation_count) /
                              static_cast<double>(total_mutations);
                     auto effective_spp = p * camera->node()->spp();
@@ -670,11 +667,7 @@ private:
                                           };
                     }
                     dispatch_count = 0u;
-                    if (display() && display()->update(command_buffer, static_cast<uint>(effective_spp))) {
-                        progress.update(p);
-                    } else {
-                        command_buffer << [&progress, p] { progress.update(p); };
-                    }
+                    command_buffer << [&progress, p] { progress.update(p); };
                 }
             }
         }

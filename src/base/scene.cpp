@@ -4,7 +4,7 @@
 
 #include <mutex>
 
-#include <core/thread_pool.h>
+#include <util/thread_pool.h>
 #include <sdl/scene_desc.h>
 #include <sdl/scene_node_desc.h>
 #include <base/camera.h>
@@ -22,6 +22,8 @@
 #include <base/texture_mapping.h>
 #include <base/spectrum.h>
 #include <base/scene.h>
+#include <base/medium.h>
+#include <base/phase_function.h>
 
 namespace luisa::render {
 
@@ -32,6 +34,7 @@ struct Scene::Config {
     luisa::unordered_map<luisa::string, NodeHandle> nodes;
     Integrator *integrator{nullptr};
     Environment *environment{nullptr};
+    Medium *environment_medium{nullptr};
     Spectrum *spectrum{nullptr};
     luisa::vector<Camera *> cameras;
     luisa::vector<Shape *> shapes;
@@ -39,6 +42,7 @@ struct Scene::Config {
 
 const Integrator *Scene::integrator() const noexcept { return _config->integrator; }
 const Environment *Scene::environment() const noexcept { return _config->environment; }
+const Medium *Scene::environment_medium() const noexcept { return _config->environment_medium; }
 const Spectrum *Scene::spectrum() const noexcept { return _config->spectrum; }
 luisa::span<const Shape *const> Scene::shapes() const noexcept { return _config->shapes; }
 luisa::span<const Camera *const> Scene::cameras() const noexcept { return _config->cameras; }
@@ -57,7 +61,8 @@ namespace detail {
     return mutex;
 }
 
-[[nodiscard]] static auto &scene_plugin_load(const std::filesystem::path &runtime_dir, SceneNodeTag tag, std::string_view impl_type) noexcept {
+[[nodiscard]] static auto &scene_plugin_load(
+    const std::filesystem::path &runtime_dir, SceneNodeTag tag, luisa::string_view impl_type) noexcept {
     std::scoped_lock lock{detail::scene_plugin_registry_mutex()};
     auto name = luisa::format("luisa-render-{}-{}", scene_node_tag_description(tag), impl_type);
     for (auto &c : name) { c = static_cast<char>(std::tolower(c)); }
@@ -65,7 +70,7 @@ namespace detail {
     if (auto iter = registry.find(name); iter != registry.end()) {
         return *iter->second;
     }
-    auto module = luisa::make_unique<DynamicModule>(runtime_dir, name);
+    auto module = luisa::make_unique<DynamicModule>(DynamicModule::load(runtime_dir, name));
     return *registry.emplace(name, std::move(module)).first->second;
 }
 
@@ -185,6 +190,14 @@ Spectrum *Scene::load_spectrum(const SceneNodeDesc *desc) noexcept {
     return dynamic_cast<Spectrum *>(load_node(SceneNodeTag::SPECTRUM, desc));
 }
 
+Medium *Scene::load_medium(const SceneNodeDesc *desc) noexcept {
+    return dynamic_cast<Medium *>(load_node(SceneNodeTag::MEDIUM, desc));
+}
+
+PhaseFunction *Scene::load_phase_function(const SceneNodeDesc *desc) noexcept {
+    return dynamic_cast<PhaseFunction *>(load_node(SceneNodeTag::PHASE_FUNCTION, desc));
+}
+
 luisa::unique_ptr<Scene> Scene::create(const Context &ctx, const SceneDesc *desc) noexcept {
     if (!desc->root()->is_defined()) [[unlikely]] {
         LUISA_ERROR_WITH_LOCATION(
@@ -200,9 +213,11 @@ luisa::unique_ptr<Scene> Scene::create(const Context &ctx, const SceneDesc *desc
         desc->root()->property_node("integrator"));
     scene->_config->environment = scene->load_environment(
         desc->root()->property_node_or_default("environment"));
+    scene->_config->environment_medium = scene->load_medium(
+        desc->root()->property_node_or_default("environment_medium"));
     auto cameras = desc->root()->property_node_list("cameras");
     auto shapes = desc->root()->property_node_list("shapes");
-    auto environments = desc->root()->property_node_list_or_default("environments");
+    auto environments = desc->root()->property_node_or_default("environments", SceneNodeDesc::shared_default_medium("Null"));
     scene->_config->cameras.reserve(cameras.size());
     scene->_config->shapes.reserve(shapes.size());
     for (auto c : cameras) {
@@ -213,7 +228,7 @@ luisa::unique_ptr<Scene> Scene::create(const Context &ctx, const SceneDesc *desc
         scene->_config->shapes.emplace_back(
             scene->load_shape(s));
     }
-    ThreadPool::global().synchronize();
+    global_thread_pool().synchronize();
     return scene;
 }
 
